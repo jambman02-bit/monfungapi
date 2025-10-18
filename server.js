@@ -103,6 +103,10 @@ function verifyApiKey(req, res, next) {
 // ------------------------
 // ✅ Routes
 // ------------------------
+app.get("/", (req, res) => {
+  res.send("✅ OTP Mailer API is running successfully!");
+});
+
 app.post("/send-verification", verifyApiKey, async (req, res) => {
   const { email, name } = req.body;
   if (!email) return res.status(400).json({ success: false, message: "Email required" });
