@@ -1,23 +1,40 @@
+// ------------------------
+// ✅ Dependencies
+// ------------------------
 const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
 const nodemailer = require("nodemailer");
 const admin = require("firebase-admin");
-require("dotenv").config();
+const dotenv = require("dotenv");
 
+// ------------------------
+// ✅ Initialize Environment
+// ------------------------
+dotenv.config();
+
+// ------------------------
+// ✅ Firebase Admin SDK
+// ------------------------
+const serviceAccount = require("/etc/secrets/firebase-key.json");
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+  databaseURL: "https://hackerpdf-f6074-default-rtdb.firebaseio.com",
+});
+
+const db = admin.database();
+
+// ------------------------
+// ✅ Express App Setup
+// ------------------------
 const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
-// ✅ Initialize Firebase
-const serviceAccount = require("./firebase-key.json");
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-  databaseURL: "https://hackerpdf-f6074-default-rtdb.firebaseio.com", // change this
-});
-const db = admin.database();
-
-// ✅ Email Transporter
+// ------------------------
+// ✅ Nodemailer Transporter
+// ------------------------
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: process.env.SMTP_PORT,
@@ -28,20 +45,13 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-// ✅ Helper: Generate random OTP
+// ------------------------
+// ✅ Helper Functions
+// ------------------------
 function generateOTP() {
   return Math.floor(100000 + Math.random() * 900000);
 }
 
-// ✅ Middleware: Verify API Key
-function verifyApiKey(req, res, next) {
-  const clientKey = req.headers["x-api-key"];
-  if (!clientKey) return res.status(401).json({ success: false, message: "API key missing" });
-  if (clientKey !== process.env.API_KEY) return res.status(403).json({ success: false, message: "Invalid API key" });
-  next();
-}
-
-// ✅ Helper: Send Email
 async function sendEmail(to, subject, html) {
   try {
     await transporter.sendMail({
@@ -57,7 +67,6 @@ async function sendEmail(to, subject, html) {
   }
 }
 
-// ✅ Store OTP in Firebase
 async function storeOTP(email, otp, purpose) {
   const expiry = Date.now() + process.env.OTP_EXPIRY_MINUTES * 60 * 1000;
   await db.ref("otps/" + email.replace(/\./g, "_")).set({
@@ -67,7 +76,6 @@ async function storeOTP(email, otp, purpose) {
   });
 }
 
-// ✅ Verify OTP in Firebase
 async function verifyOTP(email, otp, purpose) {
   const snapshot = await db.ref("otps/" + email.replace(/\./g, "_")).once("value");
   const data = snapshot.val();
@@ -77,13 +85,24 @@ async function verifyOTP(email, otp, purpose) {
   if (Date.now() > data.expiry) return { success: false, message: "OTP expired" };
   if (data.otp != otp) return { success: false, message: "Invalid OTP" };
 
-  // Optionally delete OTP after successful verification
   await db.ref("otps/" + email.replace(/\./g, "_")).remove();
-
   return { success: true, message: "OTP verified successfully" };
 }
 
-// ✅ Route: Send Verification Code
+// ------------------------
+// ✅ Middleware: Verify API Key
+// ------------------------
+function verifyApiKey(req, res, next) {
+  const clientKey = req.headers["x-api-key"];
+  if (!clientKey) return res.status(401).json({ success: false, message: "API key missing" });
+  if (clientKey !== process.env.API_KEY)
+    return res.status(403).json({ success: false, message: "Invalid API key" });
+  next();
+}
+
+// ------------------------
+// ✅ Routes
+// ------------------------
 app.post("/send-verification", verifyApiKey, async (req, res) => {
   const { email, name } = req.body;
   if (!email) return res.status(400).json({ success: false, message: "Email required" });
@@ -106,7 +125,6 @@ app.post("/send-verification", verifyApiKey, async (req, res) => {
   }
 });
 
-// ✅ Route: Send Password Reset Code
 app.post("/send-reset", verifyApiKey, async (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ success: false, message: "Email required" });
@@ -128,7 +146,6 @@ app.post("/send-reset", verifyApiKey, async (req, res) => {
   }
 });
 
-// ✅ Route: Verify OTP
 app.post("/verify-otp", verifyApiKey, async (req, res) => {
   const { email, otp, purpose } = req.body;
   if (!email || !otp || !purpose)
@@ -138,5 +155,8 @@ app.post("/verify-otp", verifyApiKey, async (req, res) => {
   res.json(result);
 });
 
+// ------------------------
+// ✅ Start Server
+// ------------------------
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`✅ OTP API running on port ${PORT}`));
