@@ -1,0 +1,7 @@
+otp-mailer-api/
+├── server.js
+├── utils/
+│   └── mailer.js
+├── package.json
+├── package-lock.json
+└── .env   (⚠️ don’t upload this to GitHub)
